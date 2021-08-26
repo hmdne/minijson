@@ -1,0 +1,177 @@
+require "minijson/version"
+
+module MiniJSON
+  class ParserError < StandardError; end
+
+  class << self
+    def parse(str)
+      parser(lexer(str))
+    end
+
+    alias load parse
+
+    private
+
+    def lexer_regexp
+      @lexer_regexp ||= begin
+        meaningful_characters = /[()\[\]{}",:]/
+        string_escapes = /\\(?:[\\\/"bfnrt]|u[0-9a-fA-F]{4})/
+        numbers = /-?[0-9]+(\.[0-9]*)?([eE][+-]?[0-9]+)?/
+        space = /[ \r\n\t]+/
+        rest = /[^"\\: \r\n\t]+/
+        very_rest = /.*/
+
+        /(#{
+          [meaningful_characters, string_escapes, numbers, space, rest, very_rest].join('|')
+        })/
+      end
+    end
+
+    def lexer(str)
+      str.scan(lexer_regexp).map(&:first)
+    end
+
+    EMPTY_BYTES = " \r\n\t".bytes
+
+    NUMBER_REGEXP = /\A[0-9-]/
+    KEY_REGEXP = /\A[0-9a-zA-Z_]\z/
+
+    ESCAPE_TO_VALUE = Hash.new do |_,x|
+      x[2..-1].to_i(16).chr('utf-8')
+    end.merge(
+      '\"' => '"',
+      '\t' => "\t",
+      '\b' => "\b",
+      '\f' => "\f",
+      '\n' => "\n",
+      '\r' => "\r",
+      '\/' => "/",
+      '\\\\' => "\\",
+    )
+
+    def is_empty?(tok)
+      tok.bytes.all? { |i| EMPTY_BYTES.include? i }
+    end
+
+    def parser_error(tok)
+      raise ParserError, "unexpected token at '#{tok}'"
+    end
+
+    def parser(toks)
+      state = :value
+
+      # popping is cheaper than shifting
+      toks = toks.reverse
+
+      value = nil
+      finalizers = [proc { |i| value = i }]
+      structs = []
+      hash_keys = []
+
+      finalizer = proc { |i| finalizers.pop.(i) }
+
+      until toks.empty?
+        tok = toks.pop
+
+        case state
+        when :value, :top_value, :struct_value
+          case tok
+          when '{'
+            structs << {}
+            toks << ','
+          when '['
+            structs << []
+            toks << ','
+          when '}', ']'
+            parser_error(tok) if structs.empty?
+            parser_error(tok) if structs.last.class == Array && tok != ']'
+            parser_error(tok) if structs.last.class == Hash && tok != '}'
+            finalizer.(structs.pop)
+          when ','
+            # warning: [,,,,] will cause a weird behavior, but will be caught
+            case structs.last
+            when nil
+              parser_error(tok)
+            when Array
+              finalizers << proc do |i|
+                parser_error(tok) unless structs.last
+                structs.last << i
+              end
+              state = :struct_value
+            when Hash
+              finalizers << proc do |i|
+                parser_error(tok) unless structs.last && hash_keys.last
+                structs.last[hash_keys.pop] = i
+              end
+              state = :key
+            end
+          when 'true'
+            finalizer.(true)
+          when 'false'
+            finalizer.(false)
+          when 'null'
+            finalizer.(nil)
+          when method(:is_empty?)
+            # nothing
+          when '"'
+            finalizer.(receive_string(toks))
+          when NUMBER_REGEXP
+            finalizer.(receive_number(tok))
+          else
+            parser_error(tok)
+          end
+        when :key
+          case tok
+          when '"'
+            hash_keys << receive_string(toks)
+          when method(:is_empty?)
+            next
+          when KEY_REGEXP
+            hash_keys << tok
+          else
+            parser_error(tok)
+          end
+          state = :colon
+        when :colon
+          case tok
+          when ':'
+            state = :value
+          when method(:is_empty?)
+            # nothing
+          else
+            parser_error(tok)
+          end
+        end
+      end
+
+      parser_error("END") unless [finalizers, structs, hash_keys].all?(&:empty?)
+
+      value
+    end
+
+    def receive_string(toks)
+      str = []
+      while true
+        tok = toks.pop
+        if tok == nil
+          parser_error('"'+toks.join)
+        elsif tok == '"'
+          break
+        elsif tok.start_with? '\\'
+          str << ESCAPE_TO_VALUE[tok]
+        else
+          str << tok
+        end      
+      end
+      str.join
+    end
+
+    def receive_number(tok)
+      if tok.match? /[e.]/
+        tok.to_f
+      else
+        tok.to_i
+      end
+    end
+  end
+end
