@@ -10,16 +10,15 @@ name: rake
 on:
   push:
     branches: [ master ]
-  pull_request:
-    branches: [ master ]
+  pull_request: {}
 
 jobs:
-  spec:
+  rake:
     runs-on: ubuntu-latest
     strategy:
       matrix:
         ruby-version: ['2.6', '2.7', '3.0']
-        task: ['spec']
+        task: ['rspec', 'rspec-opal']
 
     steps:
     - uses: actions/checkout@v2
@@ -29,4 +28,4 @@ jobs:
         ruby-version: ${{ matrix.ruby-version }}
         bundler-cache: true # runs 'bundle install' and caches installed gems automatically
     - name: Run tests
-      run: bundle exec rake
+      run: bundle exec rake ${{ matrix.task }}

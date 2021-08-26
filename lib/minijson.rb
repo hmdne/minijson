@@ -19,7 +19,7 @@ module MiniJSON
         numbers = /-?[0-9]+(\.[0-9]*)?([eE][+-]?[0-9]+)?/
         space = /[ \r\n\t]+/
         rest = /[^"\\: \r\n\t]+/
-        very_rest = /.*/
+        very_rest = /.+/
 
         /(#{
           [meaningful_characters, string_escapes, numbers, space, rest, very_rest].join('|')
@@ -31,7 +31,7 @@ module MiniJSON
       str.scan(lexer_regexp).map(&:first)
     end
 
-    EMPTY_BYTES = " \r\n\t".bytes
+    EMPTY_BYTES = " \r\n\t"
 
     NUMBER_REGEXP = /\A[0-9-]/
     KEY_REGEXP = /\A[0-9a-zA-Z_]\z/
@@ -50,7 +50,7 @@ module MiniJSON
     )
 
     def is_empty?(tok)
-      tok.bytes.all? { |i| EMPTY_BYTES.include? i }
+      tok.each_char.all? { |i| EMPTY_BYTES.include? i }
     end
 
     def parser_error(tok)
@@ -111,7 +111,7 @@ module MiniJSON
             finalizer.(false)
           when 'null'
             finalizer.(nil)
-          when method(:is_empty?)
+          when method(:is_empty?).to_proc
             # nothing
           when '"'
             finalizer.(receive_string(toks))
@@ -124,7 +124,7 @@ module MiniJSON
           case tok
           when '"'
             hash_keys << receive_string(toks)
-          when method(:is_empty?)
+          when method(:is_empty?).to_proc
             next
           when KEY_REGEXP
             hash_keys << tok
@@ -136,7 +136,7 @@ module MiniJSON
           case tok
           when ':'
             state = :value
-          when method(:is_empty?)
+          when method(:is_empty?).to_proc
             # nothing
           else
             parser_error(tok)
@@ -167,7 +167,7 @@ module MiniJSON
     end
 
     def receive_number(tok)
-      if tok.match? /[e.]/
+      if tok.match?(/[e.]/)
         tok.to_f
       else
         tok.to_i

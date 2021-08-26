@@ -1,6 +1,6 @@
+require 'spec_helper'
+
 RSpec.describe MiniJSON do
-
-
   it "accepts numbers" do
     parse('1').should be 1
     parse('2378923794878349523789782934523').should be == 2378923794878349523789782934523 unless RUBY_ENGINE == 'opal'
