@@ -66,6 +66,7 @@ module MiniJSON
       value = nil
       finalizers = [proc { |i| value = i }]
       structs = []
+      struct_types = []
       hash_keys = []
 
       finalizer = proc { |i| finalizers.pop.(i) }
@@ -78,27 +79,30 @@ module MiniJSON
           case tok
           when '{'
             structs << {}
+            struct_types << :object
             toks << ','
           when '['
             structs << []
+            struct_types << :array
             toks << ','
           when '}', ']'
-            parser_error(tok) if structs.empty?
-            parser_error(tok) if structs.last.class == Array && tok != ']'
-            parser_error(tok) if structs.last.class == Hash && tok != '}'
+            parser_error(tok) if struct_types.empty?
+            parser_error(tok) if struct_types.last == :array && tok != ']'
+            parser_error(tok) if struct_types.last == :object && tok != '}'
+            struct_types.pop
             finalizer.(structs.pop)
           when ','
             # warning: [,,,,] will cause a weird behavior, but will be caught
-            case structs.last
+            case struct_types.last
             when nil
               parser_error(tok)
-            when Array
+            when :array
               finalizers << proc do |i|
                 parser_error(tok) unless structs.last
                 structs.last << i
               end
               state = :struct_value
-            when Hash
+            when :object
               finalizers << proc do |i|
                 parser_error(tok) unless structs.last && hash_keys.last
                 structs.last[hash_keys.pop] = i
@@ -142,7 +146,7 @@ module MiniJSON
         end
       end
 
-      parser_error("END") unless [finalizers, structs, hash_keys].all?(&:empty?)
+      parser_error("END") unless [finalizers, structs, struct_types, hash_keys].all?(&:empty?)
 
       value
     end
