@@ -18,12 +18,18 @@ module MiniJSON
         string_escapes = /\\(?:[\\\/"bfnrt]|u[0-9a-fA-F]{4})/
         numbers = /-?[0-9]+(?:\.[0-9]*)?(?:[eE][+-]?[0-9]+)?/
         constants = /(?:true|false|null|-?Infinity|NaN)/
+        # * or / are meaningless, but we don't want to fall back to very_rest
+        comments = /(?:\/\*|\*\/|\/\/|\n|[*\/])/
         space = /[ \r\n\t]+/
-        rest = /[^"\\:\r\n\t]+/
+        rest = /[^*"\\:\r\n\t]+/
+        # parse error
         very_rest = /.+/
 
         /(#{
-          [meaningful_characters, string_escapes, numbers, constants, space, rest, very_rest].join('|')
+          [
+            meaningful_characters, string_escapes, numbers,
+            constants, comments, space, rest, very_rest
+          ].join('|')
         })/
       end
     end
@@ -59,6 +65,7 @@ module MiniJSON
 
     def parser(toks)
       state = :value
+      previous_state = nil
 
       # popping is cheaper than shifting
       toks = toks.reverse
@@ -73,6 +80,19 @@ module MiniJSON
 
       until toks.empty?
         tok = toks.pop
+
+        unless [:ml_comment, :sl_comment].include? state
+          case tok
+          when '/*'
+            previous_state = state
+            state = :ml_comment
+            next
+          when '//'
+            previous_state = state
+            state = :sl_comment
+            next
+          end
+        end
 
         case state
         when :value
@@ -143,10 +163,23 @@ module MiniJSON
           else
             parser_error(tok)
           end
+        when :ml_comment
+          case tok
+          when '*/'
+            state = previous_state
+            previous_state = nil
+          end # We ignore tokens in between
+        when :sl_comment
+          case tok
+          when "\n"
+            state = previous_state
+            previous_state = nil
+          end # We ignore tokens in between
         end
       end
 
       parser_error("END") unless [finalizers, structs, struct_types, hash_keys].all?(&:empty?)
+      parser_error("END") if state == :ml_comment && previous_state
 
       value
     end

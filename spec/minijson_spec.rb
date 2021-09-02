@@ -79,4 +79,11 @@ RSpec.describe MiniJSON do
     str = "SDSDsd34xrsdsa" * 100000
     parse(%{[[[[["#{str}"]]]]]}).should be == [[[[[str]]]]]
   end
+
+  it "accepts comments" do
+    parse("[1,2,3, /* comment : . , * */ 4, 5, 6]").should be == [1,2,3,4,5,6]
+    parse("[1,2,3, // comment : . , * */\n 4, 5, 6]").should be == [1,2,3,4,5,6]
+    parse('{"a": /* comment : . , * */ 4, "b": 6}').should be == {"a" => 4, "b" => 6}
+    parse('{"a" /* comment : . , * */ : 4, "b": 6}').should be == {"a" => 4, "b" => 6}
+  end
 end
