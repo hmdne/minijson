@@ -75,7 +75,7 @@ module MiniJSON
         tok = toks.pop
 
         case state
-        when :value, :top_value, :struct_value
+        when :value
           case tok
           when '{'
             structs << {}
@@ -101,7 +101,7 @@ module MiniJSON
                 parser_error(tok) unless structs.last
                 structs.last << i
               end
-              state = :struct_value
+              state = :value
             when :object
               finalizers << proc do |i|
                 parser_error(tok) unless structs.last && hash_keys.last
