@@ -16,13 +16,14 @@ module MiniJSON
       @lexer_regexp ||= begin
         meaningful_characters = /[()\[\]{}",:]/
         string_escapes = /\\(?:[\\\/"bfnrt]|u[0-9a-fA-F]{4})/
-        numbers = /-?[0-9]+(\.[0-9]*)?([eE][+-]?[0-9]+)?/
+        numbers = /-?[0-9]+(?:\.[0-9]*)?(?:[eE][+-]?[0-9]+)?/
+        constants = /(?:true|false|null|-?Infinity|NaN)/
         space = /[ \r\n\t]+/
-        rest = /[^"\\: \r\n\t]+/
+        rest = /[^"\\:\r\n\t]+/
         very_rest = /.+/
 
         /(#{
-          [meaningful_characters, string_escapes, numbers, space, rest, very_rest].join('|')
+          [meaningful_characters, string_escapes, numbers, constants, space, rest, very_rest].join('|')
         })/
       end
     end
@@ -34,7 +35,6 @@ module MiniJSON
     EMPTY_BYTES = " \r\n\t"
 
     NUMBER_REGEXP = /\A[0-9-]/
-    KEY_REGEXP = /\A[0-9a-zA-Z_]\z/
 
     ESCAPE_TO_VALUE = Hash.new do |_,x|
       x[2..-1].to_i(16).chr('utf-8')
@@ -126,8 +126,6 @@ module MiniJSON
             hash_keys << receive_string(toks)
           when method(:is_empty?).to_proc
             next
-          when KEY_REGEXP
-            hash_keys << tok
           else
             parser_error(tok)
           end

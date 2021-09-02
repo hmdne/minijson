@@ -44,11 +44,11 @@ RSpec.describe MiniJSON do
   end
 
   it "accepts hashes" do
-    parse('{a:"b"}').should be == {"a" => "b"}
-    parse('{a:"b",b:"c"}').should be == {"a" => "b", "b" => "c"}
-    parse('{b:"c",a:"b"}').should be == {"b" => "c", "a" => "b"}
-    parse('{"b":5,a:"a"}').should be == {"b" => 5, "a" => "a"}
-    parse(' { " b " : 5 , a : " a " } ').should be == {" b " => 5, "a" => " a "}
+    parse('{"a":"b"}').should be == {"a" => "b"}
+    parse('{"a":"b","b":"c"}').should be == {"a" => "b", "b" => "c"}
+    parse('{"b":"c","a":"b"}').should be == {"b" => "c", "a" => "b"}
+    parse('{"b":5,"a":"a"}').should be == {"b" => 5, "a" => "a"}
+    parse(' { " b " : 5 , "a" : " a " } ').should be == {" b " => 5, "a" => " a "}
   end
 
   it "accepts nested arrays" do
@@ -60,17 +60,17 @@ RSpec.describe MiniJSON do
   end
 
   it "accepts nested hashes" do
-    parse('{a:{b:{c:{d:0}}}}').should be == {"a" => {"b" => {"c" => {"d" => 0}}}}
-    parse(' { a : { b : { c : { d : 0 } } } } ').should be == {"a" => {"b" => {"c" => {"d" => 0}}}}
+    parse('{"a":{"b":{"c":{"d":0}}}}').should be == {"a" => {"b" => {"c" => {"d" => 0}}}}
+    parse(' { "a" : { "b" : { "c" : { "d" : 0 } } } } ').should be == {"a" => {"b" => {"c" => {"d" => 0}}}}
   end
 
   it "accepts arrays nested in hashes and hashes nested in arrays" do
-    parse('{a:[{b:[{c:0}]}]}').should be == {"a" => [{"b" => [{"c" => 0}]}]}
-    parse(' { a : [ { b : [ { c : 0 } ] } ] } ').should be == {"a" => [{"b" => [{"c" => 0}]}]}
+    parse('{"a":[{"b":[{"c":0}]}]}').should be == {"a" => [{"b" => [{"c" => 0}]}]}
+    parse(' { "a" : [ { "b" : [ { "c" : 0 } ] } ] } ').should be == {"a" => [{"b" => [{"c" => 0}]}]}
   end
 
   it "rejects invalid JSON" do
-    %w/sadf [lol [:lol ] [[lol] [[1],,] [,]2 {a: "5"} e [4}/.each do |i|
+    %w/sadf [lol [:lol ] [[lol] [[1],,] [,]2 {"a": "5"} e [4} {a:5}/.each do |i|
       proc{ parse(i) }.should raise_error MiniJSON::ParserError
     end
   end
