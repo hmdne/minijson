@@ -16,13 +16,20 @@ module MiniJSON
       @lexer_regexp ||= begin
         meaningful_characters = /[()\[\]{}",:]/
         string_escapes = /\\(?:[\\\/"bfnrt]|u[0-9a-fA-F]{4})/
-        numbers = /-?[0-9]+(\.[0-9]*)?([eE][+-]?[0-9]+)?/
+        numbers = /-?[0-9]+(?:\.[0-9]*)?(?:[eE][+-]?[0-9]+)?/
+        constants = /(?:true|false|null|-?Infinity|NaN)/
+        # * or / are meaningless, but we don't want to fall back to very_rest
+        comments = /(?:\/\*|\*\/|\/\/|\n|[*\/])/
         space = /[ \r\n\t]+/
-        rest = /[^"\\: \r\n\t]+/
+        rest = /[^*"\\:\r\n\t]+/
+        # parse error
         very_rest = /.+/
 
         /(#{
-          [meaningful_characters, string_escapes, numbers, space, rest, very_rest].join('|')
+          [
+            meaningful_characters, string_escapes, numbers,
+            constants, comments, space, rest, very_rest
+          ].join('|')
         })/
       end
     end
@@ -34,7 +41,6 @@ module MiniJSON
     EMPTY_BYTES = " \r\n\t"
 
     NUMBER_REGEXP = /\A[0-9-]/
-    KEY_REGEXP = /\A[0-9a-zA-Z_]\z/
 
     ESCAPE_TO_VALUE = Hash.new do |_,x|
       x[2..-1].to_i(16).chr('utf-8')
@@ -59,6 +65,7 @@ module MiniJSON
 
     def parser(toks)
       state = :value
+      previous_state = nil
 
       # popping is cheaper than shifting
       toks = toks.reverse
@@ -66,6 +73,7 @@ module MiniJSON
       value = nil
       finalizers = [proc { |i| value = i }]
       structs = []
+      struct_types = []
       hash_keys = []
 
       finalizer = proc { |i| finalizers.pop.(i) }
@@ -73,32 +81,48 @@ module MiniJSON
       until toks.empty?
         tok = toks.pop
 
+        unless [:ml_comment, :sl_comment].include? state
+          case tok
+          when '/*'
+            previous_state = state
+            state = :ml_comment
+            next
+          when '//'
+            previous_state = state
+            state = :sl_comment
+            next
+          end
+        end
+
         case state
-        when :value, :top_value, :struct_value
+        when :value
           case tok
           when '{'
             structs << {}
+            struct_types << :object
             toks << ','
           when '['
             structs << []
+            struct_types << :array
             toks << ','
           when '}', ']'
-            parser_error(tok) if structs.empty?
-            parser_error(tok) if structs.last.class == Array && tok != ']'
-            parser_error(tok) if structs.last.class == Hash && tok != '}'
+            parser_error(tok) if struct_types.empty?
+            parser_error(tok) if struct_types.last == :array && tok != ']'
+            parser_error(tok) if struct_types.last == :object && tok != '}'
+            struct_types.pop
             finalizer.(structs.pop)
           when ','
             # warning: [,,,,] will cause a weird behavior, but will be caught
-            case structs.last
+            case struct_types.last
             when nil
               parser_error(tok)
-            when Array
+            when :array
               finalizers << proc do |i|
                 parser_error(tok) unless structs.last
                 structs.last << i
               end
-              state = :struct_value
-            when Hash
+              state = :value
+            when :object
               finalizers << proc do |i|
                 parser_error(tok) unless structs.last && hash_keys.last
                 structs.last[hash_keys.pop] = i
@@ -126,8 +150,6 @@ module MiniJSON
             hash_keys << receive_string(toks)
           when method(:is_empty?).to_proc
             next
-          when KEY_REGEXP
-            hash_keys << tok
           else
             parser_error(tok)
           end
@@ -141,10 +163,23 @@ module MiniJSON
           else
             parser_error(tok)
           end
+        when :ml_comment
+          case tok
+          when '*/'
+            state = previous_state
+            previous_state = nil
+          end # We ignore tokens in between
+        when :sl_comment
+          case tok
+          when "\n"
+            state = previous_state
+            previous_state = nil
+          end # We ignore tokens in between
         end
       end
 
-      parser_error("END") unless [finalizers, structs, hash_keys].all?(&:empty?)
+      parser_error("END") unless [finalizers, structs, struct_types, hash_keys].all?(&:empty?)
+      parser_error("END") if state == :ml_comment && previous_state
 
       value
     end
